@@ -153,9 +153,11 @@ const simpleCandidates = simpleInspectCandidates(leafEdges);
 
 const output = [];
 
+const rootLabel = relative(root) || ".";
+
 output.push("# Class inheritance map");
 output.push("");
-output.push(`Root: ${relative(root)}`);
+output.push(`Root: ${rootLabel}`);
 output.push(`Files scanned: ${files.length}`);
 output.push("");
 
@@ -207,10 +209,6 @@ if (leafEdges.length === 0) {
 output.push("");
 
 output.push("## Simple leaf candidates (inspect manually)");
-output.push("");
-output.push(
-  "Leaves with one `extends` hop and superclass declared under this scan — heuristic only, not a correctness or safety claim."
-);
 output.push("");
 
 if (simpleCandidates.length === 0) {

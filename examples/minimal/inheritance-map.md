@@ -18,6 +18,4 @@ Children:
 
 ## Simple leaf candidates (inspect manually)
 
-Leaves with one `extends` hop and superclass declared under this scan — heuristic only, not a correctness or safety claim.
-
 - Child extends Base
