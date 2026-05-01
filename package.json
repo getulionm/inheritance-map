@@ -1,0 +1,7 @@
+{
+  "name": "inheritance-map",
+  "private": true,
+  "scripts": {
+    "scan:example": "node tools/inheritance-map.cjs --root examples/minimal --out examples/minimal/inheritance-map.md"
+  }
+}
