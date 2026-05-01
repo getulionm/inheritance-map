@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Text scan for class inheritance: finds `class Child extends Parent` (single identifiers only).
+ * Folder layout + composition (relative imports) + class inheritance (simple extends).
  */
 const fs = require("fs");
 const path = require("path");
@@ -15,11 +15,15 @@ function getArg(name) {
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: node inheritance-map.cjs [--root <folder>] [--out <file.md>]
 
-  Defaults (when flags omitted):
+  Defaults:
     --root   current working directory
     --out    inheritance-map.md in the current working directory
 
-  Copy this file into the root of the project you want to analyze, then run:
+  Sections:
+    Folder tree (source files only), composition via ./ ../ imports,
+    superclasses / leaves / shallow leaf list from class extends.
+
+  Copy this file into the project root you want to analyze, then run:
     node inheritance-map.cjs`);
   process.exit(0);
 }
@@ -62,12 +66,128 @@ function walk(dir, files = []) {
   return files;
 }
 
-function relative(file) {
+function relativeToCwd(file) {
   return path.relative(process.cwd(), file);
 }
 
 function lineNumber(source, index) {
   return source.slice(0, index).split(/\r?\n/).length;
+}
+
+function buildFolderTreeMarkdown(filesAbs, scanRoot) {
+  const tree = {};
+  for (const abs of filesAbs) {
+    const rel = path.relative(scanRoot, abs);
+    const parts = rel.split(path.sep).filter(Boolean);
+    let cursor = tree;
+    for (let i = 0; i < parts.length; i++) {
+      const segment = parts[i];
+      const isLast = i === parts.length - 1;
+      if (isLast) {
+        if (!cursor.__files__) cursor.__files__ = [];
+        cursor.__files__.push(segment);
+      } else {
+        if (!cursor[segment]) cursor[segment] = {};
+        cursor = cursor[segment];
+      }
+    }
+  }
+
+  function render(node, indent = 0) {
+    const pad = "  ".repeat(indent);
+    const out = [];
+    const dirs = Object.keys(node).filter(k => k !== "__files__").sort();
+    const fileList = node.__files__ ? [...node.__files__].sort() : [];
+    for (const d of dirs) {
+      out.push(`${pad}- ${d}/`);
+      out.push(...render(node[d], indent + 1));
+    }
+    for (const f of fileList) {
+      out.push(`${pad}- ${f}`);
+    }
+    return out;
+  }
+
+  const lines = render(tree);
+  return lines.length ? lines.join("\n") : "(no source files under root)";
+}
+
+function extractRelativeImportSpecifiers(source) {
+  const specs = new Set();
+  const patterns = [
+    /\bfrom\s+['"](\.[^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
+    /\brequire\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
+    /\bexport\s+[^;'"]+\s+from\s+['"](\.[^'"]+)['"]/g,
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(source))) specs.add(m[1]);
+  }
+  return [...specs];
+}
+
+function tryFile(p) {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isFile() ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRelativeModule(fromAbsFile, specifier) {
+  if (!specifier.startsWith(".")) return null;
+
+  const base = path.normalize(path.join(path.dirname(fromAbsFile), specifier));
+
+  const direct = tryFile(base);
+  if (direct) return direct;
+
+  for (const ext of [".ts", ".tsx", ".js", ".jsx"]) {
+    const hit = tryFile(base + ext);
+    if (hit) return hit;
+  }
+
+  try {
+    if (fs.existsSync(base) && fs.statSync(base).isDirectory()) {
+      for (const idx of ["index.ts", "index.tsx", "index.js", "index.jsx"]) {
+        const hit = tryFile(path.join(base, idx));
+        if (hit) return hit;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+function isUnderScan(absResolved, scanRoot) {
+  const rel = path.relative(scanRoot, absResolved);
+  return rel !== "" && !rel.startsWith(".." + path.sep) && rel !== "..";
+}
+
+function compositionSection(filesAbs, scanRoot) {
+  const bySource = new Map();
+
+  for (const abs of filesAbs) {
+    const source = fs.readFileSync(abs, "utf8");
+    const specs = extractRelativeImportSpecifiers(source);
+    const targets = new Set();
+    for (const spec of specs) {
+      const resolved = resolveRelativeModule(abs, spec);
+      if (!resolved) continue;
+      if (!isUnderScan(path.normalize(resolved), path.normalize(scanRoot))) continue;
+      if (!extensions.has(path.extname(resolved))) continue;
+      targets.add(path.relative(scanRoot, resolved));
+    }
+    if (targets.size === 0) continue;
+    bySource.set(path.relative(scanRoot, abs), targets);
+  }
+
+  return [...bySource.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([src, set]) => ({ src, tgts: [...set].sort() }));
 }
 
 const files = walk(root);
@@ -150,15 +270,35 @@ function simpleInspectCandidates(edges) {
 
 const basesOrdered = [...childrenByParent.keys()].sort();
 const simpleCandidates = simpleInspectCandidates(leafEdges);
+const compositionRows = compositionSection(files, root);
+
+const rootLabel = relativeToCwd(root) || ".";
 
 const output = [];
 
-const rootLabel = relative(root) || ".";
-
-output.push("# Class inheritance map");
+output.push("# Structure & inheritance map");
 output.push("");
 output.push(`Root: ${rootLabel}`);
 output.push(`Files scanned: ${files.length}`);
+output.push("");
+
+output.push("## Folder structure (source files)");
+output.push("");
+output.push(buildFolderTreeMarkdown(files, root));
+output.push("");
+
+output.push("## Composition (resolved relative imports)");
+output.push("");
+output.push("Relative `./` and `../` specifiers only; path aliases (`@/…`) are not expanded.");
+output.push("");
+
+if (compositionRows.length === 0) {
+  output.push("(none)");
+} else {
+  for (const row of compositionRows) {
+    output.push(`- \`${row.src}\` → ${row.tgts.map(t => `\`${t}\``).join(", ")}`);
+  }
+}
 output.push("");
 
 output.push("## Superclasses (have subclasses in this scan)");
@@ -170,7 +310,7 @@ if (basesOrdered.length === 0) {
 } else {
   for (const parentName of basesOrdered) {
     const def = classDefinitions.get(parentName);
-    const definedLine = def ? `${relative(def.file)}` : "(not declared under this scan)";
+    const definedLine = def ? `${relativeToCwd(def.file)}` : "(not declared under this scan)";
 
     output.push(`### ${parentName}`);
     output.push("");
@@ -231,4 +371,4 @@ const finalOutput = output.join("\n");
 fs.writeFileSync(outPath, finalOutput);
 
 console.log(finalOutput);
-console.error(`Written ${relative(outPath)}`);
+console.error(`Written ${relativeToCwd(outPath)}`);

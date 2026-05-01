@@ -1,6 +1,6 @@
 # inheritance-map
 
-Single-file scanner for **`class Child extends Parent`** in `.ts` / `.tsx` / `.js` / `.jsx` (simple names after `extends` only — not `extends Foo.Bar`, not generics). Does **not** run TypeScript.
+Single-file scanner over `.ts` / `.tsx` / `.js` / `.jsx`: **folder layout**, **composition** via resolved `./` / `../` imports, and **inheritance** from `class Child extends Parent` (simple identifier after `extends` only — not `extends Foo.Bar`, not generics). Path aliases are **not** expanded. Does **not** run TypeScript.
 
 ## Use it like a gist
 
