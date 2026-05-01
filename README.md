@@ -1,31 +1,24 @@
 # inheritance-map
 
-Small CLI that scans a folder of `.ts` / `.tsx` / `.js` / `.jsx` sources and summarizes **`class Child extends Parent`** relationships (simple identifiers only — not `extends Foo.Bar`, not generics).
+Single-file scanner for **`class Child extends Parent`** in `.ts` / `.tsx` / `.js` / `.jsx` (simple names after `extends` only — not `extends Foo.Bar`, not generics). Does **not** run TypeScript.
 
-## Usage
+## Use it on any repo
 
-```bash
-node tools/inheritance-map.cjs --root path/to/sources [--out path/to/output.md]
-```
+**1.** Copy **`inheritance-map.cjs`** into the **root of the project** you want to analyze.
 
-If `--out` is omitted, writes `<basename-of-root>-inheritance-map.md` in the current working directory.
-
-Example using the bundled fixture:
+**2.** From that project root:
 
 ```bash
-npm run scan:example
+node inheritance-map.cjs
 ```
 
-## Output
+This scans **`.`** (the whole tree except folders like `node_modules`) and writes **`inheritance-map.md`** next to where you ran the command.
 
-Markdown sections:
+Optional:
 
-- **Superclasses** — classes that appear as a superclass in the scan, where each is defined (if seen under `--root`), and immediate subclasses.
-- **Leaf classes** — classes that extend something but are not extended by another scanned class.
-- **Simple leaf candidates** — shallow leaves whose superclass is declared under the same scan; **manual inspection only**.
+```bash
+node inheritance-map.cjs --root ./packages/foo --out ./docs/inheritance-map.md
+node inheritance-map.cjs --help
+```
 
-This does **not** run TypeScript — it matches source text only.
-
-## Limits
-
-Unexpectedly low **Files scanned** usually means `--root` is wrong or sources live outside the scanned tree.
+If **Files scanned** looks too low, check that `--root` is the folder that actually contains your sources.
